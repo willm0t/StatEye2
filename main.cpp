@@ -156,7 +156,6 @@ int main() {
             }
         }
     }
-si
     cv::imshow("Detection Image", displayImage);
 
     // Exit key
