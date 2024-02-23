@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD 11)
 set(OpenCV_DIR /opt/homebrew/opt/opencv/lib/cmake/opencv4)
 
 # Find the OpenCV package
-find_package(OpenCV REQUIRED)
+find_package(OpenCV 4 REQUIRED)
 
 # Include OpenCV directories
 include_directories(${OpenCV_INCLUDE_DIRS})

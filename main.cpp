@@ -5,162 +5,115 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/dnn.hpp>
 #include <opencv2/tracking.hpp>
+#include <opencv2/core/utility.hpp>
+#include <opencv2/videoio.hpp>
+
+cv::Scalar selectedColorHSV; // Global variable to store the selected color in HSV
+void onMouse(int event, int x, int y, int, void* userdata) {
+    if (event != cv::EVENT_LBUTTONDOWN)
+        return;
+
+    cv::Mat* frame = reinterpret_cast<cv::Mat*>(userdata);
+    cv::Vec3b bgrColor = frame->at<cv::Vec3b>(cv::Point(x, y));
+    cv::Mat bgrMat(1, 1, CV_8UC3, bgrColor);
+
+    cv::Mat hsvMat;
+    cv::cvtColor(bgrMat, hsvMat, cv::COLOR_BGR2HSV);
+    selectedColorHSV = hsvMat.at<cv::Vec3b>(0, 0);
+
+    std::cout << "Selected Color (HSV): " << selectedColorHSV << std::endl;
+}
 
 int main() {
     // Load YOLO network
-    cv::dnn::Net net = cv::dnn::readNetFromDarknet("/Users/robertwillmot/darknet/cfg/yolov4.cfg", "/Users/robertwillmot/darknet/yolov4.weights");
-    // Load image0
-    cv::Mat image = cv::imread("/Users/robertwillmot/Documents/University/Computer Science/3rd year/COMP6013 Dis/img_vid/pic3.jpg");
+    cv::dnn::Net net = cv::dnn::readNetFromDarknet("/Users/robertwillmot/darknet/cfg/yolov4.cfg",
+                                                   "/Users/robertwillmot/darknet/yolov4.weights");
 
-    // setup for opencv to read from a video file
-    cv::VideoCapture video("/Users/robertwillmot/Documents/University/Computer Science/3rd year/COMP6013 Dis/img_vid/clip1.mp4");
+    // Open the video file
+    cv::VideoCapture video(
+            "/Users/robertwillmot/Documents/University/Computer Science/3rd year/COMP6013 Dis/img_vid/clip1.mp4");
+    if (!video.isOpened()) {
+        std::cerr << "Failed to open video" << std::endl;
+        return -1;
+    }
+
+    // Read the first frame
     cv::Mat frame;
-    cv::Rect2d bbox; //holds the bounding box of the player
-
-    // read the first frame and check if file is a video
-    if (!video.read(frame)){
-        std::cerr <<"failed to read video" <<std::endl;
+    if (!video.read(frame)) {
+        std::cerr << "Failed to read video" << std::endl;
         return -1;
     }
 
-    // Check if the image was loaded successfully
-    if (image.empty()) {
-        std::cerr << "Failed to load the image!" << std::endl;
-        return -1;
-    }
+    cv::namedWindow("Select Color");
+    cv::setMouseCallback("Select Color", onMouse, reinterpret_cast<void*>(&frame));
 
-    // Convert to HSV color space for color segmentation
-    cv::Mat hsvImage;
-    cv::cvtColor(image, hsvImage, cv::COLOR_BGR2HSV);
+// Show the frame and wait for the user to select a color
+    cv::imshow("Select Color", frame);
+    cv::waitKey(0); // Wait indefinitely until a key is pressed or color is selected
 
-    // Define the range for green color (adjust these values)
-    int lowH = 30; // Example values for green
-    int highH = 90;
-    int lowS = 50;
-    int highS = 255;
-    int lowV = 50;
-    int highV = 255;
+    cv::destroyWindow("Select Color"); // Close the window
 
-    cv::Scalar lowerGreen(lowH, lowS, lowV);
-    cv::Scalar upperGreen(highH, highS, highV);
-
-    // Create a mask for green color
-    cv::Mat greenMask;
-    cv::inRange(hsvImage, lowerGreen, upperGreen, greenMask);
-
-    // Apply the green mask to the original image
-    cv::Mat maskedImage;
-    cv::bitwise_and(image, image, maskedImage, greenMask);
-
-    // Continue with preprocessing on the masked image
-    cv::Mat grayscaleImage;
-    cv::cvtColor(maskedImage, grayscaleImage, cv::COLOR_BGR2GRAY);
-    cv::Mat blurredImage;
-    cv::GaussianBlur(grayscaleImage, blurredImage, cv::Size(5, 5), 0);
-
-    // Edge Detection: Canny
-    cv::Mat edges;
-    double lowThreshold = 50; // Adjust these values based on your image
-    double highThreshold = 75;
-    cv::Canny(blurredImage, edges, lowThreshold, highThreshold);
-
-    // Detect Lines: Hough Transform
-    std::vector<cv::Vec4i> lines;
-    cv::HoughLinesP(edges, lines, 1, CV_PI/180, 50, 80, 10); // Parameters: resolution, threshold, minLineLength, maxLineGap
-
-    // Filter lines based on proximity to green
-    int sampleDistance = 5; // Distance from the line to sample the pixels
-    std::vector<cv::Vec4i> greenBoundaryLines;
-
-    for (const auto& l : lines) {
-        // Calculate a simple perpendicular vector to the line
-        cv::Point2f dir(static_cast<float>(l[0] - l[2]), static_cast<float>(l[1] - l[3]));
-        float norm = std::sqrt(dir.x * dir.x + dir.y * dir.y);
-        dir.x /= norm;
-        dir.y /= norm;
-
-        // Sample points on both sides of the midpoint of the line
-        cv::Point midPoint((l[0] + l[2]) / 2, (l[1] + l[3]) / 2);
-        cv::Point samplePt1 = midPoint + cv::Point(static_cast<int>(dir.x * sampleDistance), static_cast<int>(dir.y * sampleDistance));
-        cv::Point samplePt2 = midPoint - cv::Point(static_cast<int>(dir.x * sampleDistance), static_cast<int>(dir.y * sampleDistance));
-
-        // Check if sampled points are within image bounds
-        if (samplePt1.inside(cv::Rect(0, 0, image.cols, image.rows)) && samplePt2.inside(cv::Rect(0, 0, image.cols, image.rows))) {
-            // Get the color of the sampled points from the green mask
-            bool pt1IsGreen = (greenMask.at<uchar>(samplePt1) == 255);
-            bool pt2IsGreen = (greenMask.at<uchar>(samplePt2) == 255);
-
-            // If both sampled points are on green, it's likely a boundary line
-            if (pt1IsGreen && pt2IsGreen) {
-                greenBoundaryLines.push_back(l);
-            }
-        }
-    }
-
-    // Create a copy of the original image to draw the lines on
-    cv::Mat displayImage = image.clone();
-
-    // Draw the filtered lines on the copy of the original image
-    for (const auto& l : greenBoundaryLines) {
-        cv::line(displayImage, cv::Point(l[0], l[1]), cv::Point(l[2], l[3]), cv::Scalar(0, 255, 0), 3, cv::LINE_AA);
-    }
-
-    // Display the image with the overlayed lines
-    cv::imshow("Line Image", displayImage);
-
-    // convert image to a blob
+    // Prepare the frame for YOLO (convert to blob)
     cv::Mat blob;
-    cv::dnn::blobFromImage(displayImage, blob, 1/255.0, cv::Size(416, 416), cv::Scalar(0, 0, 0), true, false);
-
-    // set blob as input to network
+    cv::dnn::blobFromImage(frame, blob, 1 / 255.0, cv::Size(416, 416), cv::Scalar(0, 0, 0), true, false);
     net.setInput(blob);
 
-    //run forward pass to get the detections
+    // Forward pass to get detections
     std::vector<cv::Mat> detections;
     net.forward(detections, net.getUnconnectedOutLayersNames());
 
-    //detect
-    float confidenceThreshold = 0.5;
-    int classId;
-    float confidence;
-    float* data;
-    for (auto& output : detections){
-        for (int i = 0; i <output.rows; i++){
-            data = output.ptr<float>(i);
-            confidence = data[4];
+    // Extract bounding boxes and confidences
+    std::vector<cv::Rect2d> bboxes;
+    float confidenceThreshold = 0.8; // Threshold to filter detections
+    for (auto &detection: detections) {
+        for (int i = 0; i < detection.rows; i++) {
+            float *data = detection.ptr<float>(i);
+            float confidence = data[4];
+            if (confidence > confidenceThreshold) {
+                // Scale to frame size
+                int centerX = (int) (data[0] * frame.cols);
+                int centerY = (int) (data[1] * frame.rows);
+                int width = (int) (data[2] * frame.cols);
+                int height = (int) (data[3] * frame.rows);
+                int left = centerX - width / 2;
+                int top = centerY - height / 2;
 
-            if (confidence > confidenceThreshold){
-                // get class with highest score
-                classId = -1;
-                float maxClassScore = -1;
-                for (int j=5; j < output.cols; j++){
-                    float classScore = data[j];
-                    if (classScore > maxClassScore){
-                        maxClassScore = classScore;
-                        classId = j - 5;
-                    }
-                }
-                if (classId == 0 && maxClassScore > confidenceThreshold){ //the 0 is the class ID of a person
-                    // Scale the coordinates back to the image size
-                    int centerX = static_cast<int>(data[0] * displayImage.cols);
-                    int centerY = static_cast<int>(data[1] * displayImage.rows);
-                    int width = static_cast<int>(data[2] * displayImage.cols);
-                    int height = static_cast<int>(data[3] * displayImage.rows);
-
-                    int left = centerX - width / 2;
-                    int top = centerY - height / 2;
-
-                    // Draw the bounding box
-                    cv::rectangle(displayImage, cv::Point(left, top), cv::Point(left + width, top + height), cv::Scalar(0, 0, 255), 3);
-                }
+                cv::Rect2d bbox(left, top, width, height);
+                bboxes.push_back(bbox);
             }
         }
     }
-    cv::imshow("Detection Image", displayImage);
 
-    // Exit key
-    cv::waitKey(0);
+    // Initialize individual trackers for each detected bounding box
+    std::vector<cv::Ptr<cv::Tracker>> trackers;
+    for (const auto &bbox: bboxes) {
+        auto tracker = cv::TrackerCSRT::create(); // You can choose the tracker type
+        tracker->init(frame, bbox);
+        trackers.push_back(tracker);
+    }
+// Process video and track objects
+    while (video.read(frame)) {
+        for (size_t i = 0; i < trackers.size(); i++) {
+            // Create a temporary cv::Rect for the update method
+            cv::Rect bbox;
+
+            // Update the tracker with the current frame, use cv::Rect directly
+            if (trackers[i]->update(frame, bbox)) {
+                // Tracker update succeeded, bbox is already a cv::Rect, so draw it directly
+                cv::rectangle(frame, bbox, cv::Scalar(255, 0, 0), 2, 1);
+            } else {
+                std::cerr << "Tracking failure detected for tracker " << i << std::endl;
+                // Optional: Handle tracking failure
+            }
+        }
+
+        // Display the frame with tracked objects
+        cv::imshow("Tracking", frame);
+
+        // Exit if ESC pressed
+        if (cv::waitKey(1) == 27) break; // ESC key
+    }
+
     cv::destroyAllWindows();
-
     return 0;
 }

@@ -1111,7 +1111,7 @@
 				}
 			],
 			"type" : "INTERNAL",
-			"value" : "[/opt/homebrew/Cellar/opencv/4.9.0_2][v4.9.0()]"
+			"value" : "[/opt/homebrew/Cellar/opencv/4.9.0_2][v4.9.0(4)]"
 		},
 		{
 			"name" : "StatEye2_0_BINARY_DIR",
