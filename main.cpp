@@ -24,6 +24,22 @@ void onMouse(int event, int x, int y, int, void* userdata) {
     std::cout << "Selected Color (HSV): " << selectedColorHSV << std::endl;
 }
 
+bool hasSufficientColor(const cv::Mat& frame, const cv::Rect2d& bbox, const cv::Scalar& selectedColorHSV, double minPercentage = 0.05) {
+    cv::Mat roi = frame(bbox);
+    cv::Mat hsvRoi;
+    cv::cvtColor(roi, hsvRoi, cv::COLOR_BGR2HSV);
+    cv::Scalar lowerBound = selectedColorHSV - cv::Scalar(10, 50, 50); // Broaden the range
+    cv::Scalar upperBound = selectedColorHSV + cv::Scalar(10, 255, 255);
+    cv::Mat mask;
+    cv::inRange(hsvRoi, lowerBound, upperBound, mask);
+    double percentage = cv::countNonZero(mask) / (double)(roi.rows * roi.cols);
+
+    std::cout << "Color Match Percentage: " << percentage << std::endl; // Debugging print
+
+    return percentage >= minPercentage;
+}
+
+
 int main() {
     // Load YOLO network
     cv::dnn::Net net = cv::dnn::readNetFromDarknet("/Users/robertwillmot/darknet/cfg/yolov4.cfg",
@@ -64,7 +80,7 @@ int main() {
 
     // Extract bounding boxes and confidences
     std::vector<cv::Rect2d> bboxes;
-    float confidenceThreshold = 0.8; // Threshold to filter detections
+    float confidenceThreshold = 0.5; // Threshold to filter detections
     for (auto &detection: detections) {
         for (int i = 0; i < detection.rows; i++) {
             float *data = detection.ptr<float>(i);
@@ -84,13 +100,22 @@ int main() {
         }
     }
 
-    // Initialize individual trackers for each detected bounding box
+    std::vector<cv::Rect2d> filteredBboxes;
+    // Filter detections based on the selected color
+    for (const auto& bbox : bboxes) {
+        if (hasSufficientColor(frame, bbox, selectedColorHSV)) {
+            filteredBboxes.push_back(bbox);
+        }
+    }
+
+    // Initialize trackers for filtered detections
     std::vector<cv::Ptr<cv::Tracker>> trackers;
-    for (const auto &bbox: bboxes) {
-        auto tracker = cv::TrackerCSRT::create(); // You can choose the tracker type
+    for (const auto& bbox : filteredBboxes) {
+        auto tracker = cv::TrackerCSRT::create();
         tracker->init(frame, bbox);
         trackers.push_back(tracker);
     }
+
 // Process video and track objects
     while (video.read(frame)) {
         for (size_t i = 0; i < trackers.size(); i++) {
