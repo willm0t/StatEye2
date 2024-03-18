@@ -40,6 +40,48 @@ bool hasSufficientColor(const cv::Mat& frame, const cv::Rect2d& bbox, const cv::
 }
 
 
+cv::Scalar ballColorHSV; // Global variable to store the selected ball color in HSV
+bool colorSelected = false;
+
+void onMouse(int event, int x, int y, int, void* userdata) {
+    if (event == cv::EVENT_LBUTTONDOWN) {
+        cv::Mat* frame = reinterpret_cast<cv::Mat*>(userdata);
+        cv::Vec3b bgrColor = frame->at<cv::Vec3b>(cv::Point(x, y));
+        cv::Mat colorMat(1, 1, CV_8UC3, bgrColor);
+
+        cv::Mat hsvColor;
+        cv::cvtColor(colorMat, hsvColor, cv::COLOR_BGR2HSV);
+        ballColorHSV = hsvColor.at<cv::Vec3b>(0, 0);
+
+        std::cout << "Selected Color (HSV): " << ballColorHSV << std::endl;
+        colorSelected = true;
+    }
+}
+
+void selectBallColor(cv::VideoCapture& video) {
+    cv::Mat frame;
+    while (true) {
+        if (!video.read(frame)) {
+            std::cerr << "Failed to read frame or end of video reached." << std::endl;
+            break;
+        }
+
+        cv::imshow("Select Ball Color - Press 'N' to skip", frame);
+        cv::setMouseCallback("Select Ball Color - Press 'N' to skip", onMouse, reinterpret_cast<void*>(&frame));
+
+        char key = static_cast<char>(cv::waitKey(0));
+
+        if (colorSelected) {
+            break; // Proceed if color has been selected
+        } else if (key == 'n' || key == 'N') {
+            continue; // Skip to the next frame
+        } else {
+            break; // Exit if any other key is pressed
+        }
+    }
+    cv::destroyAllWindows();
+}
+
 int main() {
     // Load YOLO network
     cv::dnn::Net net = cv::dnn::readNetFromDarknet("/Users/robertwillmot/darknet/cfg/yolov4.cfg",
@@ -52,6 +94,15 @@ int main() {
         std::cerr << "Failed to open video" << std::endl;
         return -1;
     }
+
+    selectBallColor(video);
+    // Check if the color has been selected; if not, exit or handle accordingly
+    if (!colorSelected) {
+        std::cerr << "Ball color not selected. Exiting..." << std::endl;
+        return -1;
+    }
+
+
 
     // Read the first frame
     cv::Mat frame;
