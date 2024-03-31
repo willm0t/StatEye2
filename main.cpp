@@ -9,19 +9,33 @@
 #include <opencv2/videoio.hpp>
 
 cv::Scalar selectedColorHSV; // Global variable to store the selected color in HSV
+std::vector<cv::Point> linePoints; // To store line points
+bool selectingLine = false; // Flag to switch to line selection mode
+
 void onMouse(int event, int x, int y, int, void* userdata) {
     if (event != cv::EVENT_LBUTTONDOWN)
         return;
 
     cv::Mat* frame = reinterpret_cast<cv::Mat*>(userdata);
-    cv::Vec3b bgrColor = frame->at<cv::Vec3b>(cv::Point(x, y));
-    cv::Mat bgrMat(1, 1, CV_8UC3, bgrColor);
-
-    cv::Mat hsvMat;
-    cv::cvtColor(bgrMat, hsvMat, cv::COLOR_BGR2HSV);
-    selectedColorHSV = hsvMat.at<cv::Vec3b>(0, 0);
-
-    std::cout << "Selected Color (HSV): " << selectedColorHSV << std::endl;
+    if (!selectingLine) {
+        // Color selection logic
+        cv::Vec3b bgrColor = frame->at<cv::Vec3b>(cv::Point(x, y));
+        cv::Mat bgrMat(1, 1, CV_8UC3, bgrColor);
+        cv::Mat hsvMat;
+        cv::cvtColor(bgrMat, hsvMat, cv::COLOR_BGR2HSV);
+        selectedColorHSV = hsvMat.at<cv::Vec3b>(0, 0);
+        std::cout << "Selected Color (HSV): " << selectedColorHSV << std::endl;
+    } else {
+        // Line selection logic
+        if (linePoints.size() < 2) {
+            linePoints.push_back(cv::Point(x, y));
+            if (linePoints.size() == 2) {
+                cv::line(*frame, linePoints[0], linePoints[1], cv::Scalar(0, 255, 0), 2);
+                cv::imshow("Select Color", *frame); // Refresh window to show line
+                std::cout << "Line selected between points: " << linePoints[0] << " and " << linePoints[1] << std::endl;
+            }
+        }
+    }
 }
 
 bool hasSufficientColor(const cv::Mat& frame, const cv::Rect2d& bbox, const cv::Scalar& selectedColorHSV, double minPercentage = 0.05) {
@@ -39,47 +53,10 @@ bool hasSufficientColor(const cv::Mat& frame, const cv::Rect2d& bbox, const cv::
     return percentage >= minPercentage;
 }
 
-
-cv::Scalar ballColorHSV; // Global variable to store the selected ball color in HSV
-bool colorSelected = false;
-
-void onMouse(int event, int x, int y, int, void* userdata) {
-    if (event == cv::EVENT_LBUTTONDOWN) {
-        cv::Mat* frame = reinterpret_cast<cv::Mat*>(userdata);
-        cv::Vec3b bgrColor = frame->at<cv::Vec3b>(cv::Point(x, y));
-        cv::Mat colorMat(1, 1, CV_8UC3, bgrColor);
-
-        cv::Mat hsvColor;
-        cv::cvtColor(colorMat, hsvColor, cv::COLOR_BGR2HSV);
-        ballColorHSV = hsvColor.at<cv::Vec3b>(0, 0);
-
-        std::cout << "Selected Color (HSV): " << ballColorHSV << std::endl;
-        colorSelected = true;
-    }
-}
-
-void selectBallColor(cv::VideoCapture& video) {
-    cv::Mat frame;
-    while (true) {
-        if (!video.read(frame)) {
-            std::cerr << "Failed to read frame or end of video reached." << std::endl;
-            break;
-        }
-
-        cv::imshow("Select Ball Color - Press 'N' to skip", frame);
-        cv::setMouseCallback("Select Ball Color - Press 'N' to skip", onMouse, reinterpret_cast<void*>(&frame));
-
-        char key = static_cast<char>(cv::waitKey(0));
-
-        if (colorSelected) {
-            break; // Proceed if color has been selected
-        } else if (key == 'n' || key == 'N') {
-            continue; // Skip to the next frame
-        } else {
-            break; // Exit if any other key is pressed
-        }
-    }
-    cv::destroyAllWindows();
+cv::Ptr<cv::Tracker> initializeTracker(const cv::Mat& frame, const cv::Rect2d& bbox) {
+    auto tracker = cv::TrackerCSRT::create();
+    tracker->init(frame, bbox);
+    return tracker;
 }
 
 int main() {
@@ -89,20 +66,11 @@ int main() {
 
     // Open the video file
     cv::VideoCapture video(
-            "/Users/robertwillmot/Documents/University/Computer Science/3rd year/COMP6013 Dis/img_vid/clip1.mp4");
+            "/Users/robertwillmot/Documents/University/Computer Science/3rd year/COMP6013 Dis/img_vid/clip6.mp4");
     if (!video.isOpened()) {
         std::cerr << "Failed to open video" << std::endl;
         return -1;
     }
-
-    selectBallColor(video);
-    // Check if the color has been selected; if not, exit or handle accordingly
-    if (!colorSelected) {
-        std::cerr << "Ball color not selected. Exiting..." << std::endl;
-        return -1;
-    }
-
-
 
     // Read the first frame
     cv::Mat frame;
@@ -112,13 +80,39 @@ int main() {
     }
 
     cv::namedWindow("Select Color");
-    cv::setMouseCallback("Select Color", onMouse, reinterpret_cast<void*>(&frame));
-
-// Show the frame and wait for the user to select a color
+    cv::setMouseCallback("Select Color", onMouse, reinterpret_cast<void *>(&frame));
+    // Show the frame and wait for the user to select a color
     cv::imshow("Select Color", frame);
     cv::waitKey(0); // Wait indefinitely until a key is pressed or color is selected
 
-    cv::destroyWindow("Select Color"); // Close the window
+    // Before proceeding to YOLO and tracking part
+    std::cout << "Press any key to continue to line selection..." << std::endl;
+    cv::waitKey(0); // Wait for key press to continue
+
+    selectingLine = true; // Switch to line selection mode
+    linePoints.clear(); // Clear previous line points if any
+    std::cout << "Please select two points to define a line on the pitch." << std::endl;
+
+    // Show the frame again for line selection
+    cv::imshow("Select Color", frame);
+    cv::waitKey(0); // Wait indefinitely until line is selected
+    cv::destroyWindow("Select Color"); // Close the window after selection
+
+    // Calculate scale factor based on the selected line and inputted real-world distance
+    if (linePoints.size() == 2) {
+        double pixelDistance = cv::norm(linePoints[0] - linePoints[1]);
+        double realWorldDistance;
+        std::cout << "Enter the real-world distance (in meters) for the selected line: ";
+        std::cin >> realWorldDistance;
+
+        double scaleFactor = realWorldDistance / pixelDistance;
+        std::cout << "Scale factor (meters per pixel): " << scaleFactor << std::endl;
+    } else {
+        std::cerr << "Line selection error." << std::endl;
+        return -1; // Exit if line selection did not occur properly
+    }
+
+
 
     // Prepare the frame for YOLO (convert to blob)
     cv::Mat blob;
@@ -153,7 +147,7 @@ int main() {
 
     std::vector<cv::Rect2d> filteredBboxes;
     // Filter detections based on the selected color
-    for (const auto& bbox : bboxes) {
+    for (const auto &bbox: bboxes) {
         if (hasSufficientColor(frame, bbox, selectedColorHSV)) {
             filteredBboxes.push_back(bbox);
         }
@@ -161,7 +155,7 @@ int main() {
 
     // Initialize trackers for filtered detections
     std::vector<cv::Ptr<cv::Tracker>> trackers;
-    for (const auto& bbox : filteredBboxes) {
+    for (const auto &bbox: filteredBboxes) {
         auto tracker = cv::TrackerCSRT::create();
         tracker->init(frame, bbox);
         trackers.push_back(tracker);
@@ -192,4 +186,5 @@ int main() {
 
     cv::destroyAllWindows();
     return 0;
+
 }
