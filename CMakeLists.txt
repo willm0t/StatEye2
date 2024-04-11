@@ -1,17 +1,14 @@
-cmake_minimum_required(VERSION 3.10)
-project(StatEye2_0)
+cmake_minimum_required(VERSION 3.24)
+project(StatEye2)
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 
-# Set OpenCV_DIR to the path provided by pkg-config
 set(OpenCV_DIR /opt/homebrew/opt/opencv/lib/cmake/opencv4)
 
-# Find the OpenCV package
 find_package(OpenCV 4 REQUIRED)
 
-# Include OpenCV directories
 include_directories(${OpenCV_INCLUDE_DIRS})
 
-# Define your executable and link OpenCV libraries
-add_executable(StatEye2_0 main.cpp)
-target_link_libraries(StatEye2_0 ${OpenCV_LIBS})
+
+add_executable(StatEye2 main.cpp VideoTracker.cpp VideoTracker.h Setup.cpp Setup.h)
+target_link_libraries(StatEye2 ${OpenCV_LIBS})
