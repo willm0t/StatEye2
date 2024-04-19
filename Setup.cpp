@@ -35,22 +35,32 @@ void Setup::selectColourAndPoints() {
 void Setup::onMouse(int event, int x, int y, int flags, void* userdata) {
     Setup* self = reinterpret_cast<Setup*>(userdata);
 
-    if (event == cv::EVENT_LBUTTONDOWN) {
-        if (self->currentState == SelectionState::COLOUR_SELECTION) {
-            // Color selection logic...
+    if (event != cv::EVENT_LBUTTONDOWN) return; // Return early if it's not a left button down event
+
+    switch (self->currentState) {
+        case SelectionState::COLOUR_SELECTION:
+            // Handle colour selection
+            self->handleColourSelection(y, x);
             self->currentState = SelectionState::POINT_SELECTION;
-            self->advanceInstruction(); // Ensure this advances to first point selection instruction
-        } else if (self->currentState == SelectionState::POINT_SELECTION) {
+            std::cout << "Kit colour selected. Please select the next point." << std::endl;
+            self->advanceInstruction();
+            break;
+        case SelectionState::POINT_SELECTION:
+            // Handle point selection
             self->selectedPoints.push_back(cv::Point(x, y));
+            std::cout << "Point selected at (" << x << ", " << y << ")." << std::endl;
             if (self->currentInstructionIndex < self->instructions.size()) {
-                // If more points to select, advance to next instruction
                 self->advanceInstruction();
             } else {
-                // If all points are selected, prepare for distance input
-                std::cout << "All selections completed. Please proceed to distance input." << std::endl;
+                // Transition to DISTANCE_INPUT if all points are selected
+                std::cout << "All points selected. Please proceed to distance input." << std::endl;
                 self->currentState = SelectionState::DISTANCE_INPUT;
             }
-        }
+            break;
+        default:
+            // Handle unexpected states
+            std::cerr << "Unhandled selection state!" << std::endl;
+            break;
     }
 }
 
@@ -95,11 +105,11 @@ void Setup::displayInstructions() {
 
 void Setup::calculateScaleFactors(float distanceHalfwayToCorner, float distanceHalfwayAcross,
                                   float distancePenaltyBox) {
-    float pixelDistanceHalfwayToCornerNear = cv::norm(selectedPoints[1] - selectedPoints[2]);
-    float pixelDistanceHalfwayAcross = cv::norm(selectedPoints[2] - selectedPoints[3]);
-    float pixelDistanceHalfwayToCornerFar = cv::norm(selectedPoints[3] - selectedPoints[4]);
-    float pixelDistanceGoal = cv::norm(selectedPoints[5] - selectedPoints[6]);
-    float pixelDistancePenaltyBox = cv::norm(selectedPoints[7] - selectedPoints[8]);
+    float pixelDistanceHalfwayToCornerNear = cv::norm(selectedPoints[0] - selectedPoints[1]);
+    float pixelDistanceHalfwayAcross = cv::norm(selectedPoints[1] - selectedPoints[2]);
+    float pixelDistanceHalfwayToCornerFar = cv::norm(selectedPoints[2] - selectedPoints[3]);
+    float pixelDistanceGoal = cv::norm(selectedPoints[4] - selectedPoints[5]);
+    float pixelDistancePenaltyBox = cv::norm(selectedPoints[6] - selectedPoints[7]);
 
     // Calculate scale factors based on the real-world measurements and pixel distances
     baseScaleFactorWidth = distanceHalfwayAcross / pixelDistanceHalfwayAcross;

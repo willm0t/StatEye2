@@ -12,7 +12,7 @@
 
 int main() {
     try{
-        std::string videoPath = "/Users/robertwillmot/Documents/University/Computer Science/3rd year/COMP6013 Dis/img_vid/clip4.mp4";
+        std::string videoPath = "/Users/robertwillmot/Documents/University/Computer Science/3rd year/COMP6013 Dis/img_vid/clip3.mp4";
         std::string cfgPath = "/Users/robertwillmot/darknet/cfg/yolov4.cfg";
         std::string weightsPath = "/Users/robertwillmot/darknet/yolov4.weights";
 
@@ -37,12 +37,6 @@ int main() {
 
         videoTracker.initialiseTrackersWithDetections();
         videoTracker.trackAndCalculateDistances();
-
-
-
-
-
-
     }
     catch (const std::exception& e){
         std::cerr << "Exception caught: " << e.what() << std::endl;

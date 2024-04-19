@@ -89,36 +89,38 @@ void VideoTracker::trackAndCalculateDistances() {
         for (size_t i = 0; i < trackers.size(); ++i) {
             cv::Rect bbox;
             if (trackers[i]->update(frame, bbox)) {
-                cv::Point2f currentPosition = cv::Point2f(bbox.x + bbox.width / 2.0, bbox.y + bbox.height / 2.0);
+                cv::Point2f currentPosition(bbox.x + bbox.width / 2.0, bbox.y + bbox.height);
 
                 if (i >= previousPositions.size()) {
                     previousPositions.push_back(currentPosition);
-                    distancesTraveled.push_back(0.0f); // Initialise if not already done
+                    distancesTraveled.push_back(0.0f);  // Reset the distance when tracker is newly initialized
                 }
 
-                // Calculate pixel distance moved since last frame
                 double pixelsMoved = cv::norm(currentPosition - previousPositions[i]);
+                if (pixelsMoved > 500) {  // Example threshold, adjust based on expected maximum movement
+                    std::cout << "Warning: Possible tracker jump detected for tracker " << i << std::endl;
+                    continue;  // Skip this frame for this tracker
+                }
 
-                // Adjust scale factor based on the Y-coordinate
                 float adjustedScaleFactor = calculateScaleFactorForPosition(currentPosition.y, selectedPoints[2], selectedPoints[3]);
+                if (adjustedScaleFactor < 0) {  // Check for invalid scale factor
+                    std::cerr << "Error: Negative scale factor computed." << std::endl;
+                    continue;  // Skip this frame for this tracker
+                }
 
-                // Calculate real-world distance moved
                 double realWorldDistanceMoved = pixelsMoved * adjustedScaleFactor;
-
-                // Update total distance traveled
                 distancesTraveled[i] += realWorldDistanceMoved;
 
-                // Draw tracking info on the frame
                 drawTrackingInfo(frame, bbox, distancesTraveled[i]);
             }
         }
 
-        // Display the frame with tracked objects
         cv::imshow("Tracking", frame);
         int key = cv::waitKey(30);
         if (key == 27) break; // ESC key to exit
     }
 }
+
 
 void VideoTracker::drawTrackingInfo(cv::Mat &frame, const cv::Rect2d &bbox, float distance) {
     cv::rectangle(frame, bbox, cv::Scalar(255, 0, 0), 2, 1);
@@ -128,10 +130,19 @@ void VideoTracker::drawTrackingInfo(cv::Mat &frame, const cv::Rect2d &bbox, floa
 }
 
 float VideoTracker::calculateScaleFactorForPosition(float y, const cv::Point& nearHalfwayLine, const cv::Point& farHalfwayLine) {
-    float deltaY = farHalfwayLine.y - nearHalfwayLine.y;
+    float deltaY = std::abs(farHalfwayLine.y - nearHalfwayLine.y);
+    if(deltaY == 0) deltaY = 1; // Prevent division by zero
     float scaleGradient = (baseScaleFactorLengthFar - baseScaleFactorLengthNear) / deltaY;
-    return baseScaleFactorLengthNear + (y - nearHalfwayLine.y) * scaleGradient;
+
+    float result = baseScaleFactorLengthNear + (y - nearHalfwayLine.y) * scaleGradient;
+
+    // Debug output
+    std::cout << "deltaY: " << deltaY << ", scaleGradient: " << scaleGradient << ", y: " << y
+              << ", nearHalfwayLine.y: " << nearHalfwayLine.y << ", result: " << result << std::endl;
+
+    return result;
 }
+
 
 
 
